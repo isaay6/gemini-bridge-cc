@@ -116,6 +116,17 @@ test("buildAgyArgs full", () => {
   );
 });
 
+test("buildAgyArgs rejects unsupported modes and never emits --mode plan", () => {
+  for (const mode of ["plan", "yolo"]) {
+    assert.throws(() => buildAgyArgs({ prompt: "x", printTimeoutSeconds: 60, mode }), /Unsupported agy mode/);
+  }
+  for (const mode of ["auto", "accept-edits", undefined, null]) {
+    const args = buildAgyArgs({ prompt: "x", printTimeoutSeconds: 60, mode });
+    assert.ok(!args.includes("plan"));
+    assert.equal(args.includes("--mode"), Boolean(mode));
+  }
+});
+
 test("buildPermissionSettings includes read-only commands and extras", () => {
   const parsed = JSON.parse(buildPermissionSettings({ extraAllow: ["npm test"] }));
   const allow = parsed.permissions.allow;

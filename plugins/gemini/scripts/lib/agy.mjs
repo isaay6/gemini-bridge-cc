@@ -11,6 +11,8 @@ import { terminateProcessTree } from "./process.mjs";
 export const READ_ONLY_COMMANDS = ["git", "ls", "cat", "grep", "find", "rg", "head", "tail", "wc"];
 export const TESTED_AGY_VERSION = "1.5.9";
 export const MIN_AGY_VERSION = "1.5.0";
+// `--mode plan` is deliberately excluded: it writes a plan and waits for approval (phase 0).
+const ALLOWED_MODES = ["accept-edits", "auto"];
 
 const IS_WINDOWS = process.platform === "win32";
 const SYNC_TIMEOUT_MS = 60_000;
@@ -89,6 +91,9 @@ export function buildAgyArgs({
   printTimeoutSeconds,
   settingsJson
 }) {
+  if (mode != null && mode !== "" && !ALLOWED_MODES.includes(mode)) {
+    throw new Error(`Unsupported agy mode "${mode}": use ${ALLOWED_MODES.join(" or ")}, or omit it.`);
+  }
   const args = ["-p", prompt, "--output-format", "stream-json", "--print-timeout", `${printTimeoutSeconds}s`];
   const optional = [
     ["--model", model],
