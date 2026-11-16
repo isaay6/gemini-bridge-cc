@@ -132,12 +132,17 @@ export function getWorkingTreeState(cwd) {
   };
 }
 
+export function hasHead(cwd) {
+  return git(cwd, ["rev-parse", "--verify", "HEAD"]).status === 0;
+}
+
 export function resolveReviewTarget(cwd, options = {}) {
   ensureGitRepository(cwd);
 
   const requestedScope = options.scope ?? "auto";
   const baseRef = options.base ?? null;
   const state = getWorkingTreeState(cwd);
+  const unbornHead = !hasHead(cwd);
   const supportedScopes = new Set(["auto", "working-tree", "branch"]);
 
   if (baseRef) {
@@ -153,7 +158,8 @@ export function resolveReviewTarget(cwd, options = {}) {
     return {
       mode: "working-tree",
       label: "working tree diff",
-      explicit: true
+      explicit: true,
+      unbornHead
     };
   }
 
@@ -177,7 +183,8 @@ export function resolveReviewTarget(cwd, options = {}) {
     return {
       mode: "working-tree",
       label: "working tree diff",
-      explicit: false
+      explicit: false,
+      unbornHead
     };
   }
 

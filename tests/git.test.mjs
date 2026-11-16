@@ -26,6 +26,20 @@ test("resolveReviewTarget prefers working tree when repo is dirty", () => {
   assert.equal(target.mode, "working-tree");
 });
 
+test("unborn repositories collect staged and untracked context without HEAD", () => {
+  const cwd = makeTempDir();
+  initGitRepo(cwd);
+  fs.writeFileSync(path.join(cwd, "staged.js"), "export const staged = true;\n");
+  fs.writeFileSync(path.join(cwd, "new.js"), "export const untracked = true;\n");
+  run("git", ["add", "staged.js"], { cwd });
+  const target = resolveReviewTarget(cwd, {});
+  const context = collectReviewContext(cwd, target);
+  assert.equal(target.mode, "working-tree");
+  assert.equal(target.unbornHead, true);
+  assert.match(context.content, /staged\.js/);
+  assert.match(context.content, /new\.js/);
+});
+
 test("resolveReviewTarget falls back to branch diff when repo is clean", () => {
   const cwd = makeTempDir();
   initGitRepo(cwd);

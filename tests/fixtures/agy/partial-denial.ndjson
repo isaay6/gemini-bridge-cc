@@ -1,0 +1,1 @@
+{"event":"result","result":{"conversation_id":"partial-denial-conversation","status":"SUCCESS","response":"Partial work was completed.\n","denied_actions":[{"action":"command","display_name":"Bash"}]}}

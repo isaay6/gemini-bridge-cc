@@ -257,6 +257,7 @@ async function buildSetupReport(cwd, actionsTaken = []) {
 
   return {
     ready: usable && auth.ok,
+    ok: usable && auth.ok,
     agy,
     auth,
     models,
@@ -305,6 +306,9 @@ function readReviewSchema() {
 
 function buildDiffCommand(context) {
   if (context.target.mode === "working-tree") {
+    if (context.target.unbornHead) {
+      return "git status --porcelain; git diff --cached; read untracked files listed by git status (do not use HEAD)";
+    }
     return "git diff HEAD";
   }
   return `git diff ${context.comparison?.reviewRange ?? `${context.target.baseRef}...HEAD`}`;
@@ -460,7 +464,8 @@ async function executeReviewRun(request) {
     );
   }
 
-  const ok = structuredOutput != null;
+  const denied = state === "completed-with-denials";
+  const ok = structuredOutput != null && !denied;
   const payload = {
     ok,
     state,
@@ -472,7 +477,7 @@ async function executeReviewRun(request) {
     rendered,
     structuredOutput,
     rawOutput,
-    parseError: ok ? null : reason,
+    parseError: ok ? null : (reason ?? (denied ? "one or more actions were denied" : null)),
     conversationId: run.conversationId,
     deniedActions: run.deniedActions,
     usage: run.usage,
@@ -480,7 +485,7 @@ async function executeReviewRun(request) {
   };
 
   return {
-    exitStatus: ok ? 0 : 1,
+    exitStatus: denied ? 2 : (ok ? 0 : 1),
     payload,
     rendered,
     summary: structuredOutput?.summary ?? reason ?? firstMeaningfulLine(rawOutput, `${reviewName} finished.`),
@@ -619,7 +624,7 @@ function getCurrentClaudeSessionId() {
 function filterJobsForCurrentClaudeSession(jobs) {
   const sessionId = getCurrentClaudeSessionId();
   if (!sessionId) {
-    return jobs;
+    return [];
   }
   return jobs.filter((job) => job.sessionId === sessionId);
 }
@@ -627,7 +632,7 @@ function filterJobsForCurrentClaudeSession(jobs) {
 // Only finished task jobs (never reviews) that have a Gemini conversation can be resumed.
 function findLatestResumableTaskJob(jobs) {
   return (
-    jobs.find((job) => job.jobClass === "task" && job.conversationId && !isActiveJobStatus(job.status)) ?? null
+    jobs.find((job) => job.jobClass === "task" && job.conversationId && !isActiveJobStatus(job.status) && job.status !== "cancelled") ?? null
   );
 }
 
@@ -789,7 +794,8 @@ async function executeTaskRun(request) {
   }
 
   const state = classification.state;
-  const ok = state === "completed" || state === "completed-with-denials";
+  const denied = state === "completed-with-denials";
+  const ok = state === "completed";
   const payload = {
     ok,
     state,
@@ -809,7 +815,7 @@ async function executeTaskRun(request) {
   };
 
   return {
-    exitStatus: ok ? 0 : 1,
+    exitStatus: denied ? 2 : (ok ? 0 : 1),
     payload,
     rendered,
     summary: ok
@@ -1066,7 +1072,21 @@ function handleResult(argv) {
     job.jobClass === "task" && typeof storedJob?.rendered === "string" && storedJob.rendered
       ? storedJob.rendered
       : renderStoredJobResult(job, storedJob);
-  outputCommandResult({ job, storedJob }, rendered, options.json);
+  const resultPayload = storedJob?.result;
+  outputCommandResult(
+    {
+      job,
+      storedJob,
+      ...(resultPayload && typeof resultPayload === "object"
+        ? { ok: resultPayload.ok, state: resultPayload.state, exitCode: resultPayload.state === "completed-with-denials" ? 2 : resultPayload.exitCode }
+        : {})
+    },
+    rendered,
+    options.json
+  );
+  if (resultPayload?.state === "completed-with-denials") {
+    process.exitCode = 2;
+  }
 }
 
 function killJobProcess(pid) {

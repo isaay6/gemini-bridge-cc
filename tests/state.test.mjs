@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import process from "node:process";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -133,4 +136,41 @@ test("job-specific Gemini fields round-trip through state and job files", () => 
     { conversationId: job.conversationId, agyState: job.agyState, deniedActions: job.deniedActions, usage: job.usage }
   );
   assert.deepEqual(readJobFile(resolveJobFile(workspace, job.id)), job);
+});
+
+test("concurrent child upserts retain every job", async () => {
+  const workspace = makeTempDir();
+  const dataDir = makeTempDir();
+  const worker = path.join(path.dirname(fileURLToPath(import.meta.url)), "state-upsert-worker.mjs");
+  const children = await Promise.all(
+    Array.from({ length: 20 }, (_, index) =>
+      new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [worker, workspace, `concurrent-${index}`], {
+          stdio: ["ignore", "ignore", "pipe"],
+          env: { ...process.env, CLAUDE_PLUGIN_DATA: dataDir }
+        });
+        child.on("error", reject);
+        let stderr = "";
+        child.stderr.on("data", (chunk) => { stderr += chunk; });
+        child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`worker exited ${code}: ${stderr}`))));
+      })
+    )
+  );
+  assert.equal(children.length, 20);
+  const [stateDirectory] = fs.readdirSync(path.join(dataDir, "state"));
+  const jobs = JSON.parse(fs.readFileSync(path.join(dataDir, "state", stateDirectory, "state.json"), "utf8")).jobs;
+  assert.deepEqual(
+    jobs.map((job) => job.id).sort(),
+    Array.from({ length: 20 }, (_, index) => `concurrent-${index}`).sort()
+  );
+});
+
+test("invalid state is backed up before a fresh state is returned", () => {
+  const workspace = makeTempDir();
+  const stateFile = resolveStateFile(workspace);
+  fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+  fs.writeFileSync(stateFile, "{ not json", "utf8");
+  assert.deepEqual(listJobs(workspace), []);
+  assert.equal(fs.existsSync(stateFile), false);
+  assert.equal(fs.readdirSync(path.dirname(stateFile)).some((name) => /^state\.json\.corrupt-\d+$/.test(name)), true);
 });

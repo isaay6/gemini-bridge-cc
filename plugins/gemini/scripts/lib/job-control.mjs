@@ -175,6 +175,7 @@ export function enrichJob(job, options = {}) {
 
   return {
     ...enriched,
+    sessionUnknown: Boolean(options.sessionUnknown),
     phase: enriched.phase ?? inferLegacyJobPhase(enriched, enriched.progressPreview)
   };
 }
@@ -215,17 +216,18 @@ export function buildStatusSnapshot(cwd, options = {}) {
   const jobs = sortJobsNewestFirst(filterJobsForCurrentSession(listJobs(workspaceRoot), options));
   const maxJobs = options.maxJobs ?? DEFAULT_MAX_STATUS_JOBS;
   const maxProgressLines = options.maxProgressLines ?? DEFAULT_MAX_PROGRESS_LINES;
+  const sessionUnknown = !getCurrentSessionId(options);
 
   const running = jobs
     .filter((job) => job.status === "queued" || job.status === "running")
-    .map((job) => enrichJob(job, { maxProgressLines }));
+    .map((job) => enrichJob(job, { maxProgressLines, sessionUnknown }));
 
   const latestFinishedRaw = jobs.find((job) => job.status !== "queued" && job.status !== "running") ?? null;
-  const latestFinished = latestFinishedRaw ? enrichJob(latestFinishedRaw, { maxProgressLines }) : null;
+  const latestFinished = latestFinishedRaw ? enrichJob(latestFinishedRaw, { maxProgressLines, sessionUnknown }) : null;
 
   const recent = (options.all ? jobs : jobs.slice(0, maxJobs))
     .filter((job) => job.status !== "queued" && job.status !== "running" && job.id !== latestFinished?.id)
-    .map((job) => enrichJob(job, { maxProgressLines }));
+    .map((job) => enrichJob(job, { maxProgressLines, sessionUnknown }));
 
   return {
     workspaceRoot,

@@ -68,3 +68,15 @@ test("failed or timed-out gate task allows stop and leaves a note", () => {
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /allowing stop/i);
 });
+
+test("gate allows stop when a task completed with denied actions", () => {
+  const workspace = makeTempRepo({ "a.txt": "a\n" });
+  const stateRoot = makeTempDir("gemini-gate-denial-");
+  const previous = process.env.CLAUDE_PLUGIN_DATA;
+  process.env.CLAUDE_PLUGIN_DATA = stateRoot;
+  try { setConfig(workspace, "stopReviewGate", true); } finally { if (previous == null) delete process.env.CLAUDE_PLUGIN_DATA; else process.env.CLAUDE_PLUGIN_DATA = previous; }
+  const result = runHook(workspace, { CLAUDE_PLUGIN_DATA: stateRoot, GEMINI_BRIDGE_AGY_BIN: fakeAgyPath, FAKE_AGY_FIXTURE: "partial-denial" });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /allowing stop/i);
+});

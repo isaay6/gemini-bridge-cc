@@ -11,6 +11,7 @@ import {
   resolveAgyBinary,
   buildPermissionSettings,
   buildAgyArgs,
+  buildAgyCommand,
   getAgyVersion,
   listAgyModels,
   runAgy
@@ -125,6 +126,14 @@ test("buildAgyArgs rejects unsupported modes and never emits --mode plan", () =>
     assert.ok(!args.includes("plan"));
     assert.equal(args.includes("--mode"), Boolean(mode));
   }
+});
+
+test("buildAgyCommand invokes Windows command wrappers through cmd.exe", () => {
+  assert.deepEqual(buildAgyCommand("C:\\Program Files\\agy.cmd", ["-p", "say \"hello\""], { platform: "win32", comSpec: "C:\\Windows\\cmd.exe" }), {
+    command: "C:\\Windows\\cmd.exe",
+    args: ["/d", "/s", "/c", '"C:\\Program Files\\agy.cmd" -p "say \\"hello\\""']
+  });
+  assert.deepEqual(buildAgyCommand("agy.exe", ["--version"], { platform: "win32" }), { command: "agy.exe", args: ["--version"] });
 });
 
 test("buildPermissionSettings includes read-only commands and extras", () => {

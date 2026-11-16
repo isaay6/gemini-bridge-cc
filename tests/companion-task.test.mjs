@@ -223,6 +223,34 @@ test("task with a denied command is failed and never relays skip-permissions adv
   assert.doesNotMatch(result.stdout, /dangerously/);
 });
 
+test("task completed with denied actions returns partial output with exit code 2", () => {
+  const repo = makeTempRepo();
+  const { env } = setupEnv({ FAKE_AGY_FIXTURE: "partial-denial" });
+  const result = companion(["task", "--json", "do", "it"], { cwd: repo, env });
+  assert.equal(result.status, 2);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.state, "completed-with-denials");
+  assert.match(payload.rendered, /Partial work/);
+  assert.match(payload.rendered, /Denied actions/);
+});
+
+test("background partial-denial result retains failure semantics", async () => {
+  const repo = makeTempRepo();
+  const { env } = setupEnv({ FAKE_AGY_FIXTURE: "partial-denial" });
+  const launch = companionJson(["task", "--background", "do", "it"], { cwd: repo, env });
+  await waitFor(() => {
+    const result = companion(["status", launch.jobId, "--json"], { cwd: repo, env });
+    return result.status === 0 && JSON.parse(result.stdout).job.status === "failed";
+  }, { label: "partial-denial background task" });
+  const result = companion(["result", launch.jobId, "--json"], { cwd: repo, env });
+  assert.equal(result.status, 2);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.state, "completed-with-denials");
+  assert.match(payload.storedJob.rendered, /Denied actions/);
+});
+
 test("task-resume-candidate is unavailable on a fresh state", () => {
   const repo = makeTempRepo();
   const { env } = setupEnv();
@@ -245,6 +273,13 @@ test("task --resume-last continues the latest finished task conversation of this
     env: { ...env, GEMINI_BRIDGE_SESSION_ID: "another-session" }
   });
   assert.equal(otherSession.available, false);
+
+  const noSessionEnv = { ...env };
+  delete noSessionEnv.GEMINI_BRIDGE_SESSION_ID;
+  assert.equal(companionJson(["task-resume-candidate"], { cwd: repo, env: noSessionEnv }).available, false);
+  const unknownSessionStatus = companionJson(["status"], { cwd: repo, env: noSessionEnv });
+  assert.equal(unknownSessionStatus.latestFinished.id, first.jobId);
+  assert.equal(unknownSessionStatus.latestFinished.sessionUnknown, true);
 
   const resumed = companionJson(["task", "--resume-last", "now", "add", "tests"], {
     cwd: repo,
@@ -365,6 +400,7 @@ test("cancel kills worker and agy child", async () => {
     const result = companion(["result", jobId], { cwd: repo, env });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /[Cc]ancelled/);
+    assert.equal(companionJson(["task-resume-candidate"], { cwd: repo, env }).available, false);
   } finally {
     for (const pid of [workerPid, agyPid]) {
       if (Number.isInteger(pid)) {

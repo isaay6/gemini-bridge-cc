@@ -11,6 +11,10 @@ const FALLBACK_STATE_ROOT_DIR = path.join(os.tmpdir(), "gemini-bridge");
 const STATE_FILE_NAME = "state.json";
 const JOBS_DIR_NAME = "jobs";
 const MAX_JOBS = 50;
+const LOCK_FILE_NAME = ".state.lock";
+const LOCK_TIMEOUT_MS = 5_000;
+const STALE_LOCK_MS = 30_000;
+const lockWaitArray = new Int32Array(new SharedArrayBuffer(4));
 
 function nowIso() {
   return new Date().toISOString();
@@ -55,6 +59,55 @@ export function ensureStateDir(cwd) {
   fs.mkdirSync(resolveJobsDir(cwd), { recursive: true });
 }
 
+function pause(milliseconds) {
+  Atomics.wait(lockWaitArray, 0, 0, milliseconds);
+}
+
+function lockOwnerIsGone(lockFile) {
+  try {
+    const ownerPid = Number.parseInt(fs.readFileSync(lockFile, "utf8"), 10);
+    if (!Number.isInteger(ownerPid) || ownerPid <= 0) return false;
+    process.kill(ownerPid, 0);
+    return false;
+  } catch (error) {
+    return error?.code === "ESRCH";
+  }
+}
+
+function withStateLock(cwd, operation) {
+  ensureStateDir(cwd);
+  const lockFile = path.join(resolveStateDir(cwd), LOCK_FILE_NAME);
+  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  let handle;
+  while (!handle) {
+    try {
+      handle = fs.openSync(lockFile, "wx");
+      fs.writeFileSync(handle, `${process.pid}\n`, "utf8");
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+      try {
+        if (Date.now() - fs.statSync(lockFile).mtimeMs > STALE_LOCK_MS || lockOwnerIsGone(lockFile)) fs.unlinkSync(lockFile);
+      } catch {
+        // Another process released or replaced the lock; retry.
+      }
+      if (Date.now() >= deadline) throw new Error(`Timed out waiting for state lock: ${lockFile}`);
+      pause(25);
+    }
+  }
+  try {
+    return operation();
+  } finally {
+    fs.closeSync(handle);
+    try { fs.unlinkSync(lockFile); } catch { /* already removed */ }
+  }
+}
+
+function atomicWrite(filePath, content) {
+  const temporary = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`);
+  fs.writeFileSync(temporary, content, "utf8");
+  fs.renameSync(temporary, filePath);
+}
+
 export function loadState(cwd) {
   const stateFile = resolveStateFile(cwd);
   if (!fs.existsSync(stateFile)) {
@@ -72,7 +125,14 @@ export function loadState(cwd) {
       },
       jobs: Array.isArray(parsed.jobs) ? parsed.jobs : []
     };
-  } catch {
+  } catch (error) {
+    const corruptFile = `${stateFile}.corrupt-${Date.now()}`;
+    try {
+      fs.renameSync(stateFile, corruptFile);
+      process.stderr.write(`[gemini bridge] state file was invalid JSON; backed it up to ${corruptFile}\n`);
+    } catch {
+      process.stderr.write(`[gemini bridge] state file was invalid JSON and could not be backed up: ${error.message}\n`);
+    }
     return defaultState();
   }
 }
@@ -89,7 +149,7 @@ function removeFileIfExists(filePath) {
   }
 }
 
-export function saveState(cwd, state) {
+function saveStateUnlocked(cwd, state) {
   const previousJobs = loadState(cwd).jobs;
   ensureStateDir(cwd);
   const nextJobs = pruneJobs(state.jobs ?? []);
@@ -111,14 +171,20 @@ export function saveState(cwd, state) {
     removeFileIfExists(job.logFile);
   }
 
-  fs.writeFileSync(resolveStateFile(cwd), `${JSON.stringify(nextState, null, 2)}\n`, "utf8");
+  atomicWrite(resolveStateFile(cwd), `${JSON.stringify(nextState, null, 2)}\n`);
   return nextState;
 }
 
+export function saveState(cwd, state) {
+  return withStateLock(cwd, () => saveStateUnlocked(cwd, state));
+}
+
 export function updateState(cwd, mutate) {
-  const state = loadState(cwd);
-  mutate(state);
-  return saveState(cwd, state);
+  return withStateLock(cwd, () => {
+    const state = loadState(cwd);
+    mutate(state);
+    return saveStateUnlocked(cwd, state);
+  });
 }
 
 export function generateJobId(prefix = "job") {
@@ -164,10 +230,11 @@ export function getConfig(cwd) {
 }
 
 export function writeJobFile(cwd, jobId, payload) {
-  ensureStateDir(cwd);
-  const jobFile = resolveJobFile(cwd, jobId);
-  fs.writeFileSync(jobFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-  return jobFile;
+  return withStateLock(cwd, () => {
+    const jobFile = resolveJobFile(cwd, jobId);
+    atomicWrite(jobFile, `${JSON.stringify(payload, null, 2)}\n`);
+    return jobFile;
+  });
 }
 
 export function readJobFile(jobFile) {

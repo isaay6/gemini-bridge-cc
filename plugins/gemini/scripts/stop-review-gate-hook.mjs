@@ -57,20 +57,24 @@ function runGate(cwd, config, input) {
     note("review task timed out; allowing stop.");
     return;
   }
-  if (result.status !== 0) {
-    const detail = String(result.stderr || result.stdout || "").trim();
-    note(`review task failed; allowing stop.${detail ? ` ${detail}` : ""}`);
-    return;
-  }
   let payload;
   try {
     payload = JSON.parse(result.stdout);
   } catch {
+    if (result.status !== 0) {
+      const detail = String(result.stderr || result.stdout || "").trim();
+      note(`review task failed; allowing stop.${detail ? ` ${detail}` : ""}`);
+      return;
+    }
     note("review task returned invalid JSON; allowing stop.");
     return;
   }
-  if (!payload?.ok || !["completed", "completed-with-denials"].includes(payload?.state)) {
+  if (!payload?.ok) {
     note(`review task did not complete successfully; allowing stop.${payload?.state ? ` State: ${payload.state}.` : ""}`);
+    return;
+  }
+  if (result.status !== 0 || payload?.state !== "completed") {
+    note(`review task failed; allowing stop.${payload?.state ? ` State: ${payload.state}.` : ""}`);
     return;
   }
   const firstLine = String(payload.rawOutput ?? "").split(/\r?\n/, 1)[0].trim();

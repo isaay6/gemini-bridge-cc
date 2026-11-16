@@ -56,6 +56,33 @@ test("setup --json reports agy version and models", () => {
   assert.equal(report.reviewGate.enabled, false);
   assert.equal(report.reviewGate.model, "gemini-3.8-flash-low");
   assert.equal(report.ready, true);
+  assert.equal(report.ok, true);
+});
+
+test("review completed with denied actions returns partial output with exit code 2", () => {
+  const repo = dirtyRepo();
+  const { env } = setupEnv({ FAKE_AGY_FIXTURE: "review-partial-denial" });
+  const result = companion(["review", "--json"], { cwd: repo, env });
+  assert.equal(result.status, 2);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.state, "completed-with-denials");
+  assert.match(payload.rendered, /Partial review/);
+  assert.match(payload.rendered, /Denied actions/);
+});
+
+test("review handles an unborn HEAD without instructing agy to diff HEAD", () => {
+  const repo = makeTempDir();
+  const init = run("git", ["init", "-b", "main"], { cwd: repo });
+  assert.equal(init.status, 0, init.stderr);
+  fs.writeFileSync(path.join(repo, "new.js"), "export default 1;\n");
+  const { env, argsFile } = setupEnv({ FAKE_AGY_FIXTURE: "review-structured" });
+  const result = companion(["review", "--json"], { cwd: repo, env });
+  assert.equal(result.status, 0, result.stderr);
+  const prompt = promptOf(recordedArgv(argsFile));
+  assert.doesNotMatch(prompt, /git diff HEAD/);
+  assert.match(prompt, /git status --porcelain/);
+  assert.match(prompt, /git diff --cached/);
 });
 
 test("setup auth probe uses a read-only model-agnostic call", () => {

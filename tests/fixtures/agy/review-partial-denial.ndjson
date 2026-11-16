@@ -1,0 +1,1 @@
+{"event":"result","result":{"conversation_id":"review-partial-denial","status":"SUCCESS","response":"{\"verdict\":\"approve\",\"summary\":\"Partial review.\",\"findings\":[],\"next_steps\":[]}","structured_output":{"verdict":"approve","summary":"Partial review.","findings":[],"next_steps":[]},"denied_actions":[{"action":"command","display_name":"Bash"}]}}

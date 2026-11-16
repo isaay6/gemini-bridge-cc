@@ -83,6 +83,9 @@ function isStructuredReviewStoredResult(storedJob) {
 
 function formatJobLine(job) {
   const parts = [job.id, `${job.status || "unknown"}`];
+  if (job.sessionUnknown) {
+    parts.push("session unknown");
+  }
   if (job.kindLabel) {
     parts.push(job.kindLabel);
   }
@@ -152,7 +155,7 @@ function appendActiveJobsTable(lines, jobs) {
       actions.push(`/gemini:cancel ${job.id}`);
     }
     lines.push(
-      `| ${escapeMarkdownCell(job.id)} | ${escapeMarkdownCell(job.kindLabel)} | ${escapeMarkdownCell(job.status)} | ${escapeMarkdownCell(job.phase ?? "")} | ${escapeMarkdownCell(job.elapsed ?? "")} | ${escapeMarkdownCell(job.conversationId ?? "")} | ${escapeMarkdownCell(job.summary ?? "")} | ${actions.map((action) => `\`${action}\``).join("<br>")} |`
+      `| ${escapeMarkdownCell(job.id)} | ${escapeMarkdownCell(job.kindLabel)} | ${escapeMarkdownCell(job.sessionUnknown ? `${job.status} (session unknown)` : job.status)} | ${escapeMarkdownCell(job.phase ?? "")} | ${escapeMarkdownCell(job.elapsed ?? "")} | ${escapeMarkdownCell(job.conversationId ?? "")} | ${escapeMarkdownCell(job.summary ?? "")} | ${actions.map((action) => `\`${action}\``).join("<br>")} |`
     );
   }
 }

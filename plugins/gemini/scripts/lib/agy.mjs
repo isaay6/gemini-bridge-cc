@@ -111,15 +111,27 @@ export function buildAgyArgs({
   return args;
 }
 
-function commandFor(bin, args) {
+function quoteForCmd(value) {
+  const text = String(value);
+  if (!/[\s"]/u.test(text)) return text;
+  return `"${text.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1')}"`;
+}
+
+// Kept pure so Windows wrapper invocation can be verified off Windows.
+export function buildAgyCommand(bin, args, options = {}) {
+  const platform = options.platform ?? process.platform;
   if (/\.(mjs|js)$/i.test(bin)) {
     return { command: process.execPath, args: [bin, ...args] };
+  }
+  if (platform === "win32" && /\.(cmd|bat)$/i.test(bin)) {
+    const commandLine = [bin, ...args].map(quoteForCmd).join(" ");
+    return { command: options.comSpec ?? process.env.ComSpec ?? "cmd.exe", args: ["/d", "/s", "/c", commandLine] };
   }
   return { command: bin, args };
 }
 
 function runSync(bin, args) {
-  const { command, args: fullArgs } = commandFor(bin, args);
+  const { command, args: fullArgs } = buildAgyCommand(bin, args);
   return spawnSync(command, fullArgs, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -210,7 +222,7 @@ export function runAgy({ bin, args, cwd, timeoutMs, onEvent, onStderrLine, onSpa
     let killTimer = null;
 
     const realCwd = fs.realpathSync.native(cwd ?? process.cwd());
-    const { command, args: fullArgs } = commandFor(bin, args);
+    const { command, args: fullArgs } = buildAgyCommand(bin, args);
     const child = spawn(command, fullArgs, {
       cwd: realCwd,
       env: env ?? process.env,

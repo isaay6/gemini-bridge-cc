@@ -25,7 +25,7 @@ run_json() { # name, args...
   OUT="$(cd "$REPO" && node "$COMPANION" "$@" 2>"$DATA/stderr.txt")"
   local code=$?
   echo "--- $name (exit $code) ---"; echo "$OUT" | head -c 600; echo
-  OK="$(printf '%s' "$OUT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log((j=>j.ok===true||j.ready===true)(JSON.parse(s)))}catch{console.log(false)}})')"
+  OK="$(printf '%s' "$OUT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).ok===true)}catch{console.log(false)}})')"
   if [ "$OK" = "true" ]; then pass "$name"; else fail "$name"; head -c 800 "$DATA/stderr.txt"; fi
 }
 
