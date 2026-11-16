@@ -48,7 +48,7 @@ test("gate blocks only a BLOCK first line", () => {
   assert.deepEqual(JSON.parse(result.stdout), { decision: "block", reason: "x" });
 });
 
-test("gate sends a long previous response through stdin", () => {
+test("gate sends a long previous response through a private prompt file", () => {
   const workspace = makeTempRepo({ "a.txt": "a\n" });
   const stateRoot = makeTempDir("gemini-gate-long-prompt-");
   const argsFile = path.join(stateRoot, "agy-args.json");

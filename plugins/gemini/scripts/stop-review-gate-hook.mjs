@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import os from "node:os";
 import process from "node:process";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -37,27 +38,40 @@ function runGate(cwd, config, input) {
     ...process.env,
     ...(input.session_id ? { [SESSION_ID_ENV]: input.session_id } : {})
   };
-  const result = spawnSync(
-    process.execPath,
-    [
-      script,
-      "task",
-      "--read-only",
-      "--json",
-      "--timeout",
-      String(TASK_TIMEOUT_SECONDS),
-      "--model",
-      config.gateModel ?? "gemini-3.8-flash-low"
-    ],
-    {
-      cwd,
-      env: childEnv,
-      input: buildPrompt(input),
-      encoding: "utf8",
-      timeout: (TASK_TIMEOUT_SECONDS + 30) * 1000,
-      shell: false
-    }
-  );
+  // The prompt embeds the whole previous Claude response, so it can exceed the
+  // Windows command-line limit. Pass it through a private temp file instead of
+  // argv or stdin (piped stdin is read differently across Node versions).
+  const promptDir = fs.mkdtempSync(path.join(os.tmpdir(), "gemini-bridge-gate-"));
+  const promptFile = path.join(promptDir, "prompt.txt");
+  let result;
+  try {
+    fs.writeFileSync(promptFile, buildPrompt(input), { encoding: "utf8", mode: 0o600 });
+    result = spawnSync(
+      process.execPath,
+      [
+        script,
+        "task",
+        "--read-only",
+        "--json",
+        "--timeout",
+        String(TASK_TIMEOUT_SECONDS),
+        "--model",
+        config.gateModel ?? "gemini-3.8-flash-low",
+        "--prompt-file",
+        promptFile
+      ],
+      {
+        cwd,
+        env: childEnv,
+        stdio: ["ignore", "pipe", "pipe"],
+        encoding: "utf8",
+        timeout: (TASK_TIMEOUT_SECONDS + 30) * 1000,
+        shell: false
+      }
+    );
+  } finally {
+    fs.rmSync(promptDir, { recursive: true, force: true });
+  }
 
   if (result.error?.code === "ETIMEDOUT") {
     note("review task timed out; allowing stop.");
