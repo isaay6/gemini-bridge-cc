@@ -1,0 +1,5 @@
+{"event":"init","conversation_id":"29a22bce-0352-4fc2-b4d3-f8d4770c7928","init":{"cwd":"/home/user/project","tools":["read_file","run_command","write_to_file"],"permission_mode":"request-review"}}
+{"event":"step_update","step_update":{"conversation_id":"29a22bce-0352-4fc2-b4d3-f8d4770c7928","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"29a22bce-0352-4fc2-b4d3-f8d4770c7928","step_index":1,"state":"ACTIVE","step_type":"agent_response","text_delta":"Hi! How can I help you today?"}}
+{"event":"step_update","step_update":{"conversation_id":"29a22bce-0352-4fc2-b4d3-f8d4770c7928","step_index":1,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":3.275619,"usage":{"input_tokens":10058,"output_tokens":34,"thinking_tokens":25,"cache_read_tokens":0,"total_tokens":10092}}}
+{"event":"result","result":{"conversation_id":"29a22bce-0352-4fc2-b4d3-f8d4770c7928","status":"SUCCESS","response":"Hi! How can I help you today?\n","duration_seconds":5.743995,"num_turns":1,"usage":{"input_tokens":10058,"output_tokens":34,"thinking_tokens":25,"cache_read_tokens":0,"total_tokens":10092}}}
