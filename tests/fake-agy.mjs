@@ -20,8 +20,20 @@ if (argv[0] === "models") {
   process.exit(0);
 }
 
+let prompt = null;
+if (argv.includes("--input-format") && argv[argv.indexOf("--input-format") + 1] === "stream-json") {
+  let input = "";
+  for await (const chunk of process.stdin) {
+    input += chunk;
+  }
+  const line = input.split(/\r?\n/, 1)[0];
+  if (line) {
+    prompt = JSON.parse(line)?.message?.content ?? null;
+  }
+}
+
 if (process.env.FAKE_AGY_ARGS_FILE) {
-  fs.writeFileSync(process.env.FAKE_AGY_ARGS_FILE, JSON.stringify({ argv, cwd: process.cwd() }));
+  fs.writeFileSync(process.env.FAKE_AGY_ARGS_FILE, JSON.stringify({ argv, cwd: process.cwd(), prompt }));
 }
 
 if (process.env.FAKE_AGY_HANG === "1") {

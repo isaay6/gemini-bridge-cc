@@ -219,13 +219,13 @@ function agyUnavailableMessage(agy) {
 
 async function probeAgyAuth(bin, cwd) {
   const args = buildAgyArgs({
-    prompt: "Reply with OK",
     printTimeoutSeconds: AUTH_PROBE_TIMEOUT_SECONDS,
     settingsJson: buildPermissionSettings({})
   });
   const result = await runAgy({
     bin,
     args,
+    prompt: "Reply with OK",
     cwd,
     timeoutMs: (AUTH_PROBE_TIMEOUT_SECONDS + KILL_TIMER_MARGIN_SECONDS) * 1000
   });
@@ -409,7 +409,6 @@ function forwardAgyStderr(line, onProgress) {
 async function executeReviewRun(request) {
   const { job, agyBin, prompt, context, reviewName, schema, timeoutSeconds, onProgress } = request;
   const args = buildAgyArgs({
-    prompt,
     model: request.model,
     jsonSchemaPath: REVIEW_SCHEMA,
     printTimeoutSeconds: timeoutSeconds,
@@ -420,6 +419,7 @@ async function executeReviewRun(request) {
   const result = await runAgy({
     bin: agyBin,
     args,
+    prompt,
     cwd: context.repoRoot,
     timeoutMs: (timeoutSeconds + KILL_TIMER_MARGIN_SECONDS) * 1000,
     onEvent: (event) => forwardAgyEvent(event, { progress: onProgress, job }),
@@ -694,12 +694,12 @@ function resolveTaskMode(options) {
   return { mode: "accept-edits", write: true };
 }
 
-function readTaskPrompt(cwd, options, positionals) {
+async function readTaskPrompt(cwd, options, positionals) {
   if (options["prompt-file"]) {
     return fs.readFileSync(path.resolve(cwd, options["prompt-file"]), "utf8");
   }
   const positionalPrompt = positionals.join(" ");
-  return positionalPrompt || readStdinIfPiped();
+  return positionalPrompt || (await readStdinIfPiped());
 }
 
 function requireTaskRequest(prompt, resumeLast) {
@@ -754,7 +754,6 @@ async function executeTaskRun(request) {
 
   const prompt = request.prompt?.trim() ? request.prompt : DEFAULT_CONTINUE_PROMPT;
   const args = buildAgyArgs({
-    prompt,
     model: request.model,
     effort: request.effort,
     mode: request.mode,
@@ -770,6 +769,7 @@ async function executeTaskRun(request) {
   const result = await runAgy({
     bin: agy.path,
     args,
+    prompt,
     cwd: workspaceRoot,
     timeoutMs: (request.timeoutSeconds + KILL_TIMER_MARGIN_SECONDS) * 1000,
     onEvent: (event) => forwardAgyEvent(event, { progress: onProgress, job }),
@@ -893,7 +893,7 @@ async function handleTask(argv) {
   }
   const { mode, write } = resolveTaskMode(options);
   const timeoutSeconds = parseTimeoutSeconds(options.timeout, DEFAULT_TASK_TIMEOUT_SECONDS);
-  const prompt = readTaskPrompt(cwd, options, positionals);
+  const prompt = await readTaskPrompt(cwd, options, positionals);
   requireTaskRequest(prompt, resumeLast);
 
   const agy = inspectAgy();

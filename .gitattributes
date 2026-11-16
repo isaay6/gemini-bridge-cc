@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.ndjson text eol=lf
+*.stderr text eol=lf
+*.exit text eol=lf

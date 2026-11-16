@@ -106,7 +106,6 @@ export function buildPermissionSettings({ extraAllow = [] } = {}) {
 }
 
 export function buildAgyArgs({
-  prompt,
   model,
   effort,
   mode,
@@ -118,7 +117,7 @@ export function buildAgyArgs({
   if (mode != null && mode !== "" && !ALLOWED_MODES.includes(mode)) {
     throw new Error(`Unsupported agy mode "${mode}": use ${ALLOWED_MODES.join(" or ")}, or omit it.`);
   }
-  const args = ["-p", prompt, "--output-format", "stream-json", "--print-timeout", `${printTimeoutSeconds}s`];
+  const args = ["--input-format", "stream-json", "--output-format", "stream-json", "--print-timeout", `${printTimeoutSeconds}s`];
   const optional = [
     ["--model", model],
     ["--effort", effort],
@@ -210,10 +209,10 @@ function lineSplitter(onLine) {
   return {
     write(chunk) {
       buffer += chunk;
-      let idx;
-      while ((idx = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, idx).replace(/\r$/, "");
-        buffer = buffer.slice(idx + 1);
+      let match;
+      while ((match = buffer.match(/\r?\n/))) {
+        const line = buffer.slice(0, match.index);
+        buffer = buffer.slice(match.index + match[0].length);
         onLine(line);
       }
     },
@@ -227,7 +226,7 @@ function lineSplitter(onLine) {
   };
 }
 
-export function runAgy({ bin, args, cwd, timeoutMs, onEvent, onStderrLine, onSpawn, signal, env }) {
+export function runAgy({ bin, args, prompt, cwd, timeoutMs, onEvent, onStderrLine, onSpawn, signal, env }) {
   return new Promise((resolve) => {
     const accumulator = createAgyEventAccumulator();
     let stderr = "";
@@ -236,13 +235,14 @@ export function runAgy({ bin, args, cwd, timeoutMs, onEvent, onStderrLine, onSpa
     let settled = false;
     let timer = null;
     let killTimer = null;
+    let stdinErrors = "";
 
     const realCwd = fs.realpathSync.native(cwd ?? process.cwd());
     const { command, args: fullArgs } = buildAgyCommand(bin, args);
     const child = spawn(command, fullArgs, {
       cwd: realCwd,
       env: env ?? process.env,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       detached: process.platform !== "win32",
       windowsHide: true,
       shell: false
@@ -275,6 +275,10 @@ export function runAgy({ bin, args, cwd, timeoutMs, onEvent, onStderrLine, onSpa
       stderr += chunk;
       stderrSplitter.write(chunk);
     });
+    child.stdin.on("error", (error) => {
+      // Agy can exit before consuming stdin; retain EPIPE for classification without crashing.
+      stdinErrors += `stdin error: ${error.message}\n`;
+    });
 
     const kill = () => {
       if (pid == null || killTimer) {
@@ -287,7 +291,7 @@ export function runAgy({ bin, args, cwd, timeoutMs, onEvent, onStderrLine, onSpa
       }
       killTimer = setTimeout(() => {
         try {
-          if (IS_WINDOWS) {
+          if (process.platform === "win32") {
             terminateProcessTree(pid);
           } else {
             process.kill(-pid, "SIGKILL");
@@ -317,9 +321,10 @@ export function runAgy({ bin, args, cwd, timeoutMs, onEvent, onStderrLine, onSpa
       signal?.removeEventListener?.("abort", onAbort);
       stdoutLines.end();
       stderrSplitter.end();
-      if (extraStderr) {
-        stderr += extraStderr;
-        safeCall(onStderrLine, extraStderr.trim());
+      const additionalStderr = `${extraStderr}${stdinErrors}`;
+      if (additionalStderr) {
+        stderr += additionalStderr;
+        safeCall(onStderrLine, additionalStderr.trim());
       }
       const run = accumulator.finish();
       const outcome = { run, exitCode, stderr, timedOut, cancelled, pid };
@@ -334,6 +339,12 @@ export function runAgy({ bin, args, cwd, timeoutMs, onEvent, onStderrLine, onSpa
 
     if (pid != null) {
       safeCall(onSpawn, pid);
+    }
+
+    try {
+      child.stdin.end(`${JSON.stringify({ event: "user", message: { content: String(prompt ?? "") } })}\n`);
+    } catch (error) {
+      stdinErrors += `stdin error: ${error instanceof Error ? error.message : String(error)}\n`;
     }
 
     if (Number.isFinite(timeoutMs) && timeoutMs > 0) {

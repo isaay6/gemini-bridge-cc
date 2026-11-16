@@ -24,8 +24,8 @@ function setupEnv(extra = {}) {
   return { env, argsFile, dataDir };
 }
 
-function companion(args, { cwd, env }) {
-  return run(process.execPath, [COMPANION, ...args], { cwd, env });
+function companion(args, { cwd, env, input }) {
+  return run(process.execPath, [COMPANION, ...args], { cwd, env, input });
 }
 
 function dirtyRepo() {
@@ -38,8 +38,8 @@ function recordedArgv(argsFile) {
   return JSON.parse(fs.readFileSync(argsFile, "utf8")).argv;
 }
 
-function promptOf(argv) {
-  return argv[argv.indexOf("-p") + 1];
+function promptOf(record) {
+  return record.prompt;
 }
 
 test("setup --json reports agy version and models", () => {
@@ -79,7 +79,7 @@ test("review handles an unborn HEAD without instructing agy to diff HEAD", () =>
   const { env, argsFile } = setupEnv({ FAKE_AGY_FIXTURE: "review-structured" });
   const result = companion(["review", "--json"], { cwd: repo, env });
   assert.equal(result.status, 0, result.stderr);
-  const prompt = promptOf(recordedArgv(argsFile));
+  const prompt = promptOf(JSON.parse(fs.readFileSync(argsFile, "utf8")));
   assert.doesNotMatch(prompt, /git diff HEAD/);
   assert.match(prompt, /git status --porcelain/);
   assert.match(prompt, /git diff --cached/);
@@ -91,7 +91,7 @@ test("setup auth probe uses a read-only model-agnostic call", () => {
   const result = companion(["setup", "--json"], { cwd: repo, env });
   assert.equal(result.status, 0, result.stderr);
   const argv = recordedArgv(argsFile);
-  assert.equal(promptOf(argv), "Reply with OK");
+  assert.equal(promptOf(JSON.parse(fs.readFileSync(argsFile, "utf8"))), "Reply with OK");
   assert.equal(argv[argv.indexOf("--print-timeout") + 1], "60s");
   assert.ok(!argv.includes("--model"));
   assert.ok(!argv.includes("--mode"));
@@ -161,7 +161,7 @@ test("review --wait --json returns structured output and records a job", () => {
   assert.ok(!argv.includes("--mode"));
   assert.ok(argv.includes("--settings"));
   assert.equal(argv[argv.indexOf("--print-timeout") + 1], "900s");
-  const prompt = promptOf(argv);
+  const prompt = promptOf(JSON.parse(fs.readFileSync(argsFile, "utf8")));
   assert.match(prompt, /calc\.py/);
   assert.match(prompt, /git diff HEAD/);
   assert.match(prompt, /1 file changed/);
@@ -241,7 +241,7 @@ test("adversarial-review passes the focus text into the prompt", () => {
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.ok, true);
   assert.match(payload.jobId, /^review-/);
-  const prompt = promptOf(recordedArgv(argsFile));
+  const prompt = promptOf(JSON.parse(fs.readFileSync(argsFile, "utf8")));
   assert.match(prompt, /look at rounding/);
   assert.match(prompt, /adversarial/i);
 });
@@ -249,8 +249,21 @@ test("adversarial-review passes the focus text into the prompt", () => {
 test("a prompt over 100000 characters is rejected before spawning", () => {
   const repo = dirtyRepo();
   const { env, argsFile } = setupEnv({ FAKE_AGY_FIXTURE: "review-structured" });
-  const result = companion(["adversarial-review", "--json", "x".repeat(100_001)], { cwd: repo, env });
+  const result = companion(["task", "--json"], { cwd: repo, env, input: "x".repeat(100_001) });
   assert.equal(result.status, 1);
   assert.match(result.stderr + result.stdout, /100[ ,]?000/);
+  assert.equal(fs.existsSync(argsFile), false);
+});
+
+test("review prompt over 100000 characters is rejected before spawning without a huge argv", () => {
+  const repo = makeTempRepo({ "calc.py": "def add(a,b): return a+b\n" });
+  const giantName = "x".repeat(220);
+  for (let index = 0; index < 500; index += 1) {
+    fs.writeFileSync(path.join(repo, `${index}-${giantName}.txt`), "x\n");
+  }
+  const { env, argsFile } = setupEnv({ FAKE_AGY_FIXTURE: "review-structured" });
+  const result = companion(["adversarial-review", "--json"], { cwd: repo, env });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr + result.stdout, /review prompt.*100000-character limit/i);
   assert.equal(fs.existsSync(argsFile), false);
 });

@@ -99,10 +99,11 @@ Se elimina del original: `app-server*.mjs`, `broker-*.mjs`, `codex.mjs`, `claude
 Comando base (siempre):
 
 ```
-agy -p "<prompt>" --output-format stream-json --print-timeout <T> [--model M] [--effort E] [--mode X] [--conversation ID]
+agy --input-format stream-json --output-format stream-json --print-timeout <T> [--model M] [--effort E] [--mode X] [--conversation ID]
 ```
 
-- `cwd` = raíz del espacio de trabajo; `stdin` cerrado (`ignore`); stdout se parsea línea a línea; stderr se guarda en el log del trabajo.
+- `cwd` = raíz del espacio de trabajo; stdout se parsea línea a línea; stderr se guarda en el log del trabajo.
+- El prompt se entrega como una única línea NDJSON por stdin (`{event:"user",message:{content:...}}`) y stdin se cierra inmediatamente, usando `--input-format stream-json`; así evitamos el límite de ~32 KB de argumentos de Windows y seguimos evitando que `agy` quede esperando entrada.
 - Prompts: ver §5.9 (sin archivos temporales; `agy` lee el diff con `git`).
 - **Tiempo límite doble:** `--print-timeout` y un temporizador propio que mata el proceso (y su árbol) si no llega el evento `result`. Valores por defecto: revisión 15 min, tarea 30 min; configurables con `--timeout`.
 - **Interpretación del resultado** (`agy-events.mjs`): acumula `text_delta`, recoge `conversation_id`, `usage`, `status`, y cuenta errores de herramientas. Estados finales posibles del trabajo: `completed`, `completed-with-denials`, `failed`, `timed-out`, `cancelled`. Nunca “completado” con salida vacía: eso es `failed` con el stderr adjunto.

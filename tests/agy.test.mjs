@@ -74,9 +74,9 @@ test("constants", () => {
 });
 
 test("buildAgyArgs minimal", () => {
-  assert.deepEqual(buildAgyArgs({ prompt: "hi", printTimeoutSeconds: 900 }), [
-    "-p",
-    "hi",
+  assert.deepEqual(buildAgyArgs({ printTimeoutSeconds: 900 }), [
+    "--input-format",
+    "stream-json",
     "--output-format",
     "stream-json",
     "--print-timeout",
@@ -87,7 +87,6 @@ test("buildAgyArgs minimal", () => {
 test("buildAgyArgs full", () => {
   assert.deepEqual(
     buildAgyArgs({
-      prompt: "fix it",
       model: "gemini-3.8-flash-high",
       effort: "high",
       mode: "accept-edits",
@@ -97,8 +96,8 @@ test("buildAgyArgs full", () => {
       settingsJson: '{"permissions":{"allow":["command(git)"]}}'
     }),
     [
-      "-p",
-      "fix it",
+      "--input-format",
+      "stream-json",
       "--output-format",
       "stream-json",
       "--print-timeout",
@@ -121,10 +120,10 @@ test("buildAgyArgs full", () => {
 
 test("buildAgyArgs rejects unsupported modes and never emits --mode plan", () => {
   for (const mode of ["plan", "yolo"]) {
-    assert.throws(() => buildAgyArgs({ prompt: "x", printTimeoutSeconds: 60, mode }), /Unsupported agy mode/);
+    assert.throws(() => buildAgyArgs({ printTimeoutSeconds: 60, mode }), /Unsupported agy mode/);
   }
   for (const mode of ["auto", "accept-edits", undefined, null]) {
-    const args = buildAgyArgs({ prompt: "x", printTimeoutSeconds: 60, mode });
+    const args = buildAgyArgs({ printTimeoutSeconds: 60, mode });
     assert.ok(!args.includes("plan"));
     assert.equal(args.includes("--mode"), Boolean(mode));
   }
@@ -224,7 +223,8 @@ test("runAgy replays success fixture", async () => {
   const result = await withEnv({ FAKE_AGY_FIXTURE: "success", FAKE_AGY_HANG: undefined }, () =>
     runAgy({
       bin: FAKE_AGY,
-      args: buildAgyArgs({ prompt: "hi", printTimeoutSeconds: 60 }),
+      args: buildAgyArgs({ printTimeoutSeconds: 60 }),
+      prompt: "hi",
       cwd: makeTempDir(),
       timeoutMs: 20000,
       onEvent: (e) => events.push(e),
@@ -246,7 +246,8 @@ test("runAgy forwards stderr lines and failure classification", async () => {
   const result = await withEnv({ FAKE_AGY_FIXTURE: "invalid-model" }, () =>
     runAgy({
       bin: FAKE_AGY,
-      args: ["-p", "x"],
+      args: buildAgyArgs({ printTimeoutSeconds: 60 }),
+      prompt: "x",
       cwd: makeTempDir(),
       timeoutMs: 20000,
       onStderrLine: (l) => stderrLines.push(l)
@@ -263,11 +264,12 @@ test("runAgy spawns in realpath cwd", async () => {
   fs.symlinkSync(real, link, "dir");
   const argsFile = path.join(makeTempDir(), "args.json");
   await withEnv({ FAKE_AGY_FIXTURE: "success", FAKE_AGY_ARGS_FILE: argsFile }, () =>
-    runAgy({ bin: FAKE_AGY, args: ["-p", "hi"], cwd: link, timeoutMs: 20000 })
+    runAgy({ bin: FAKE_AGY, args: buildAgyArgs({ printTimeoutSeconds: 60 }), prompt: "hi", cwd: link, timeoutMs: 20000 })
   );
   const recorded = JSON.parse(fs.readFileSync(argsFile, "utf8"));
   assert.equal(recorded.cwd, real);
-  assert.deepEqual(recorded.argv, ["-p", "hi"]);
+  assert.deepEqual(recorded.argv.slice(0, 2), ["--input-format", "stream-json"]);
+  assert.equal(recorded.prompt, "hi");
 });
 
 test("runAgy kills hung agy after timeout", async () => {
@@ -276,7 +278,8 @@ test("runAgy kills hung agy after timeout", async () => {
   const result = await withEnv({ FAKE_AGY_HANG: "1" }, () =>
     runAgy({
       bin: FAKE_AGY,
-      args: ["-p", "hi"],
+      args: buildAgyArgs({ printTimeoutSeconds: 60 }),
+      prompt: "hi",
       cwd: makeTempDir(),
       timeoutMs: 1500,
       onSpawn: (p) => {
@@ -299,7 +302,8 @@ test("runAgy abort signal → cancelled", async () => {
   const result = await withEnv({ FAKE_AGY_HANG: "1" }, () =>
     runAgy({
       bin: FAKE_AGY,
-      args: ["-p", "hi"],
+      args: buildAgyArgs({ printTimeoutSeconds: 60 }),
+      prompt: "hi",
       cwd: makeTempDir(),
       timeoutMs: 20000,
       signal: controller.signal,
@@ -318,8 +322,19 @@ test("runAgy with an already-aborted signal does not hang", async () => {
   const controller = new AbortController();
   controller.abort();
   const result = await withEnv({ FAKE_AGY_HANG: "1" }, () =>
-    runAgy({ bin: FAKE_AGY, args: ["-p", "hi"], cwd: makeTempDir(), timeoutMs: 20000, signal: controller.signal })
+    runAgy({ bin: FAKE_AGY, args: buildAgyArgs({ printTimeoutSeconds: 60 }), prompt: "hi", cwd: makeTempDir(), timeoutMs: 20000, signal: controller.signal })
   );
   assert.equal(result.cancelled, true);
   assert.equal(result.classification.state, "cancelled");
+});
+
+test("runAgy delivers a 200000-character prompt through stdin intact", async () => {
+  const argsFile = path.join(makeTempDir(), "args.json");
+  const prompt = "x".repeat(200_000);
+  await withEnv({ FAKE_AGY_ARGS_FILE: argsFile, FAKE_AGY_FIXTURE: "success" }, () =>
+    runAgy({ bin: FAKE_AGY, args: buildAgyArgs({ printTimeoutSeconds: 60 }), prompt, cwd: makeTempDir(), timeoutMs: 20000 })
+  );
+  const recorded = JSON.parse(fs.readFileSync(argsFile, "utf8"));
+  assert.equal(recorded.prompt, prompt);
+  assert.ok(!recorded.argv.includes("-p"));
 });
