@@ -3,13 +3,14 @@
 import fs from "node:fs";
 import process from "node:process";
 
+import { readStdinSync } from "./lib/fs.mjs";
 import { terminateProcessTree } from "./lib/process.mjs";
 import { loadState, resolveStateFile, saveState } from "./lib/state.mjs";
 import { SESSION_ID_ENV } from "./lib/tracked-jobs.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
 
 function readHookInput() {
-  const raw = fs.readFileSync(0, "utf8").trim();
+  const raw = readStdinSync().trim();
   return raw ? JSON.parse(raw) : {};
 }
 

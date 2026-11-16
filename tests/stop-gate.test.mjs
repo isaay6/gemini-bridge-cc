@@ -72,6 +72,7 @@ test("gate sends a long previous response through a private prompt file", () => 
     { cwd: workspace, last_assistant_message: lastAssistantMessage }
   );
   assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stderr, /could not run|failed|timed out/, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { decision: "block", reason: "x" });
   const recorded = JSON.parse(fs.readFileSync(argsFile, "utf8"));
   assert.match(recorded.prompt, /Previous Claude response:/);
