@@ -32,30 +32,48 @@ export function isProbablyText(buffer) {
   return true;
 }
 
+const PIPED_STDIN_TIMEOUT_MS = 10_000;
+
 export function readStdinIfPiped() {
   if (process.stdin.isTTY) {
-    return "";
+    return Promise.resolve("");
   }
-  // Child-process stdin can be non-blocking on Windows and macOS. Read it in
-  // chunks so a large piped prompt does not fail with EAGAIN.
-  const chunks = [];
-  const buffer = Buffer.allocUnsafe(64 * 1024);
-  const sleeper = new Int32Array(new SharedArrayBuffer(4));
-  for (;;) {
-    let bytes;
-    try {
-      bytes = fs.readSync(0, buffer, 0, buffer.length, null);
-    } catch (error) {
-      if (error?.code === "EAGAIN") {
-        Atomics.wait(sleeper, 0, 0, 1);
-        continue;
-      }
-      throw error;
-    }
-    if (bytes === 0) {
-      break;
-    }
-    chunks.push(Buffer.from(buffer.subarray(0, bytes)));
+  if (process.stdin.readableEnded) {
+    return Promise.resolve("");
   }
-  return Buffer.concat(chunks).toString("utf8");
+
+  // Use the stream API instead of a synchronous read: a pipe whose writer
+  // remains open without writing must not hold the companion forever.
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timeout);
+      process.stdin.off("data", onData);
+      process.stdin.off("end", onEnd);
+      process.stdin.off("error", onError);
+      process.stdin.off("close", onClose);
+    };
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve(Buffer.concat(chunks).toString("utf8"));
+    };
+    const onData = (chunk) => chunks.push(Buffer.from(chunk));
+    const onEnd = () => finish();
+    const onClose = () => finish();
+    const onError = (error) => finish(error);
+    const timeout = setTimeout(
+      () => finish(new Error(`Timed out after ${PIPED_STDIN_TIMEOUT_MS / 1000} seconds while reading piped stdin.`)),
+      PIPED_STDIN_TIMEOUT_MS
+    );
+
+    process.stdin.on("data", onData);
+    process.stdin.once("end", onEnd);
+    process.stdin.once("error", onError);
+    process.stdin.once("close", onClose);
+    process.stdin.resume();
+  });
 }

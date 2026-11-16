@@ -694,12 +694,12 @@ function resolveTaskMode(options) {
   return { mode: "accept-edits", write: true };
 }
 
-function readTaskPrompt(cwd, options, positionals) {
+async function readTaskPrompt(cwd, options, positionals) {
   if (options["prompt-file"]) {
     return fs.readFileSync(path.resolve(cwd, options["prompt-file"]), "utf8");
   }
   const positionalPrompt = positionals.join(" ");
-  return positionalPrompt || readStdinIfPiped();
+  return positionalPrompt || (await readStdinIfPiped());
 }
 
 function requireTaskRequest(prompt, resumeLast) {
@@ -893,7 +893,7 @@ async function handleTask(argv) {
   }
   const { mode, write } = resolveTaskMode(options);
   const timeoutSeconds = parseTimeoutSeconds(options.timeout, DEFAULT_TASK_TIMEOUT_SECONDS);
-  const prompt = readTaskPrompt(cwd, options, positionals);
+  const prompt = await readTaskPrompt(cwd, options, positionals);
   requireTaskRequest(prompt, resumeLast);
 
   const agy = inspectAgy();

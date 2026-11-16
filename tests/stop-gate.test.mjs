@@ -11,11 +11,11 @@ import { setConfig } from "../plugins/gemini/scripts/lib/state.mjs";
 const hookPath = path.join(PLUGIN_ROOT, "scripts", "stop-review-gate-hook.mjs");
 const fakeAgyPath = path.join(process.cwd(), "tests", "fake-agy.mjs");
 
-function runHook(cwd, env = {}) {
+function runHook(cwd, env = {}, input = { cwd, last_assistant_message: "Changed a file." }) {
   return spawnSync(process.execPath, [hookPath], {
     cwd,
     env: { ...process.env, ...env },
-    input: JSON.stringify({ cwd, last_assistant_message: "Changed a file." }),
+    input: JSON.stringify(input),
     encoding: "utf8"
   });
 }
@@ -46,6 +46,37 @@ test("gate blocks only a BLOCK first line", () => {
   });
   assert.equal(result.status, 0);
   assert.deepEqual(JSON.parse(result.stdout), { decision: "block", reason: "x" });
+});
+
+test("gate sends a long previous response through stdin", () => {
+  const workspace = makeTempRepo({ "a.txt": "a\n" });
+  const stateRoot = makeTempDir("gemini-gate-long-prompt-");
+  const argsFile = path.join(stateRoot, "agy-args.json");
+  const previous = process.env.CLAUDE_PLUGIN_DATA;
+  process.env.CLAUDE_PLUGIN_DATA = stateRoot;
+  try {
+    setConfig(workspace, "stopReviewGate", true);
+  } finally {
+    if (previous == null) delete process.env.CLAUDE_PLUGIN_DATA;
+    else process.env.CLAUDE_PLUGIN_DATA = previous;
+  }
+  const lastAssistantMessage = "x".repeat(40_001);
+  const result = runHook(
+    workspace,
+    {
+      CLAUDE_PLUGIN_DATA: stateRoot,
+      GEMINI_BRIDGE_AGY_BIN: fakeAgyPath,
+      FAKE_AGY_FIXTURE: "gate-block",
+      FAKE_AGY_ARGS_FILE: argsFile
+    },
+    { cwd: workspace, last_assistant_message: lastAssistantMessage }
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { decision: "block", reason: "x" });
+  const recorded = JSON.parse(fs.readFileSync(argsFile, "utf8"));
+  assert.match(recorded.prompt, /Previous Claude response:/);
+  assert.ok(recorded.prompt.includes(lastAssistantMessage));
+  assert.equal(recorded.argv.includes(lastAssistantMessage), false);
 });
 
 test("failed or timed-out gate task allows stop and leaves a note", () => {

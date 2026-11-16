@@ -47,10 +47,16 @@ function runGate(cwd, config, input) {
       "--timeout",
       String(TASK_TIMEOUT_SECONDS),
       "--model",
-      config.gateModel ?? "gemini-3.8-flash-low",
-      buildPrompt(input)
+      config.gateModel ?? "gemini-3.8-flash-low"
     ],
-    { cwd, env: childEnv, encoding: "utf8", timeout: (TASK_TIMEOUT_SECONDS + 30) * 1000, shell: false }
+    {
+      cwd,
+      env: childEnv,
+      input: buildPrompt(input),
+      encoding: "utf8",
+      timeout: (TASK_TIMEOUT_SECONDS + 30) * 1000,
+      shell: false
+    }
   );
 
   if (result.error?.code === "ETIMEDOUT") {

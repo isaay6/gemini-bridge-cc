@@ -254,3 +254,16 @@ test("a prompt over 100000 characters is rejected before spawning", () => {
   assert.match(result.stderr + result.stdout, /100[ ,]?000/);
   assert.equal(fs.existsSync(argsFile), false);
 });
+
+test("review prompt over 100000 characters is rejected before spawning without a huge argv", () => {
+  const repo = makeTempRepo({ "calc.py": "def add(a,b): return a+b\n" });
+  const giantName = "x".repeat(220);
+  for (let index = 0; index < 500; index += 1) {
+    fs.writeFileSync(path.join(repo, `${index}-${giantName}.txt`), "x\n");
+  }
+  const { env, argsFile } = setupEnv({ FAKE_AGY_FIXTURE: "review-structured" });
+  const result = companion(["adversarial-review", "--json"], { cwd: repo, env });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr + result.stdout, /review prompt.*100000-character limit/i);
+  assert.equal(fs.existsSync(argsFile), false);
+});
