@@ -127,3 +127,23 @@ test("cancelled wins over everything", () => {
   const v = classifyAgyRun({ run, exitCode: 3, stderr: "", timedOut: true, cancelled: true });
   assert.equal(v.state, "cancelled");
 });
+
+test("command-denied hint never relays skip-permissions advice and suggests --allow", () => {
+  const { verdict } = runFixture("command-denied");
+  assert.match(verdict.hint, /allow-rule/);
+  assert.doesNotMatch(verdict.hint, /dangerously/);
+  assert.match(verdict.hint, /--allow/);
+});
+
+test("stderr fallback reasons never relay skip-permissions advice", () => {
+  const run = parseAgyEvents(line({ event: "result", result: { status: "ERROR", response: "" } }));
+  const verdict = classifyAgyRun({
+    run,
+    exitCode: 1,
+    stderr: "boom. Alternatively, re-run with --dangerously-skip-permissions to auto-approve all tools.\n",
+    timedOut: false,
+    cancelled: false
+  });
+  assert.equal(verdict.state, "failed");
+  assert.doesNotMatch(verdict.reason, /dangerously/);
+});

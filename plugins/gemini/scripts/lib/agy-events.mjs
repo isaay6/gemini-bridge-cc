@@ -102,14 +102,34 @@ export function parseAgyEvents(ndjson) {
   return acc.finish();
 }
 
+const SKIP_PERMISSIONS_FLAG = "--dangerously-skip-permissions";
+const ALLOW_ADVICE = "Re-run with --allow <command prefix> to permit it.";
+
+// agy suggests --dangerously-skip-permissions when it denies a tool; that advice must never be relayed.
+export function stripSkipPermissionsAdvice(text) {
+  const value = String(text ?? "");
+  if (!value.includes(SKIP_PERMISSIONS_FLAG)) {
+    return value;
+  }
+  return value
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => !sentence.includes(SKIP_PERMISSIONS_FLAG))
+    .join(" ")
+    .trim();
+}
+
 function stderrLines(stderr) {
-  return String(stderr ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  return String(stderr ?? "")
+    .split("\n")
+    .map((l) => stripSkipPermissionsAdvice(l).trim())
+    .filter(Boolean);
 }
 
 export function classifyAgyRun({ run, exitCode, stderr, timedOut, cancelled }) {
   const lines = stderrLines(stderr);
+  const allowRuleLine = lines.find((l) => l.includes("allow-rule"));
   const hint =
-    lines.find((l) => l.includes("allow-rule")) ??
+    (allowRuleLine ? `${allowRuleLine} ${ALLOW_ADVICE}` : null) ??
     lines.find((l) => l.includes("--mode auto is not available")) ??
     null;
   const out = (state, reason = null) => ({ state, reason, hint });
