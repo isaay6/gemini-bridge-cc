@@ -7,6 +7,7 @@
 - Windows: prompts are sent to `agy` through stdin (`--input-format stream-json`) instead of the command line, so long prompts no longer hit the ~32K command-line limit.
 - Windows: line endings are forced to LF (`.gitattributes`) and parsers accept CRLF.
 - macOS / Node 18: hooks read their stdin robustly (retry on `EAGAIN`). Before, a long previous Claude response could silently disable the stop-time review gate.
+- Windows: the cross-process state lock tolerates `EPERM`/`EBUSY` while another process has the lock file open, retries its removal, and waits up to 30 s, so concurrent jobs no longer time out.
 - The stop-time review gate passes its prompt to the companion through a private temporary file (mode 0600, deleted after the run).
 
 ### Verified

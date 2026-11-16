@@ -12,7 +12,10 @@ const STATE_FILE_NAME = "state.json";
 const JOBS_DIR_NAME = "jobs";
 const MAX_JOBS = 50;
 const LOCK_FILE_NAME = ".state.lock";
-const LOCK_TIMEOUT_MS = 5_000;
+const LOCK_TIMEOUT_MS = 30_000;
+// Windows reports a file that is being deleted (or is open elsewhere) as
+// EPERM/EACCES/EBUSY instead of EEXIST; treat those as "lock busy".
+const LOCK_BUSY_CODES = new Set(["EEXIST", "EPERM", "EACCES", "EBUSY"]);
 const STALE_LOCK_MS = 30_000;
 const lockWaitArray = new Int32Array(new SharedArrayBuffer(4));
 
@@ -84,7 +87,13 @@ function withStateLock(cwd, operation) {
       handle = fs.openSync(lockFile, "wx");
       fs.writeFileSync(handle, `${process.pid}\n`, "utf8");
     } catch (error) {
-      if (error?.code !== "EEXIST") throw error;
+      if (handle !== undefined) {
+        // Opened the lock but could not write the pid: release it and retry.
+        try { fs.closeSync(handle); } catch { /* ignore */ }
+        removeLockFile(lockFile);
+        handle = undefined;
+      }
+      if (!LOCK_BUSY_CODES.has(error?.code)) throw error;
       try {
         if (Date.now() - fs.statSync(lockFile).mtimeMs > STALE_LOCK_MS || lockOwnerIsGone(lockFile)) fs.unlinkSync(lockFile);
       } catch {
@@ -98,7 +107,23 @@ function withStateLock(cwd, operation) {
     return operation();
   } finally {
     fs.closeSync(handle);
-    try { fs.unlinkSync(lockFile); } catch { /* already removed */ }
+    removeLockFile(lockFile);
+  }
+}
+
+function removeLockFile(lockFile) {
+  // On Windows unlink fails with EPERM/EBUSY while another process briefly has
+  // the lock file open (e.g. reading the owner pid). Retry instead of leaving a
+  // stale lock behind.
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      fs.unlinkSync(lockFile);
+      return;
+    } catch (error) {
+      if (error?.code === "ENOENT") return;
+      if (error?.code !== "EPERM" && error?.code !== "EBUSY" && error?.code !== "EACCES") return;
+      pause(25);
+    }
   }
 }
 
