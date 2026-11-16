@@ -36,5 +36,26 @@ export function readStdinIfPiped() {
   if (process.stdin.isTTY) {
     return "";
   }
-  return fs.readFileSync(0, "utf8");
+  // Child-process stdin can be non-blocking on Windows and macOS. Read it in
+  // chunks so a large piped prompt does not fail with EAGAIN.
+  const chunks = [];
+  const buffer = Buffer.allocUnsafe(64 * 1024);
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    let bytes;
+    try {
+      bytes = fs.readSync(0, buffer, 0, buffer.length, null);
+    } catch (error) {
+      if (error?.code === "EAGAIN") {
+        Atomics.wait(sleeper, 0, 0, 1);
+        continue;
+      }
+      throw error;
+    }
+    if (bytes === 0) {
+      break;
+    }
+    chunks.push(Buffer.from(buffer.subarray(0, bytes)));
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }

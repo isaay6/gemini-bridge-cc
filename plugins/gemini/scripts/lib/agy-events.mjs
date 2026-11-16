@@ -96,7 +96,7 @@ export function createAgyEventAccumulator() {
 
 export function parseAgyEvents(ndjson) {
   const acc = createAgyEventAccumulator();
-  for (const line of String(ndjson ?? "").split("\n")) {
+  for (const line of String(ndjson ?? "").split(/\r?\n/)) {
     acc.push(line);
   }
   return acc.finish();
@@ -120,7 +120,7 @@ export function stripSkipPermissionsAdvice(text) {
 
 function stderrLines(stderr) {
   return String(stderr ?? "")
-    .split("\n")
+    .split(/\r?\n/)
     .map((l) => stripSkipPermissionsAdvice(l).trim())
     .filter(Boolean);
 }

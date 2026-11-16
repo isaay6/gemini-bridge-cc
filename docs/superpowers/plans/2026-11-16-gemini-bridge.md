@@ -4,7 +4,7 @@
 
 **Goal:** A Claude Code plugin (`gemini`, marketplace `isaay6`) that lets Claude delegate code reviews and tasks to Google's Antigravity CLI (`agy`), ported from OpenAI's codex plugin 1.0.6.
 
-**Architecture:** Slash commands (`commands/*.md`) call one Node entry point, `scripts/gemini-companion.mjs`. Each review/task spawns one `agy -p … --output-format stream-json` process, and its NDJSON events are parsed into a run summary, which is then classified into a job state. Job tracking, git context, state and rendering are ported from the codex plugin; the Codex transport (app-server, broker) is dropped.
+**Architecture:** Slash commands (`commands/*.md`) call one Node entry point, `scripts/gemini-companion.mjs`. Each review/task spawns one `agy --input-format stream-json --output-format stream-json` process, sends its prompt as one NDJSON line over stdin, and parses its NDJSON events into a run summary, which is then classified into a job state. Job tracking, git context, state and rendering are ported from the codex plugin; the Codex transport (app-server, broker) is dropped.
 
 **Tech Stack:** Node ≥ 18.18 ES modules, no runtime dependencies, `node --test`, GitHub Actions.
 
@@ -17,7 +17,7 @@
 - Node `>=18.18.0`; zero runtime npm dependencies; ES modules (`"type": "module"`).
 - License Apache-2.0. `NOTICE` must keep OpenAI's copyright and add: "Modified by isaay6 in 2026: replaced the Codex transport with Antigravity CLI (agy)." Every file ported from CODEX keeps its behaviour, minus Codex-specific parts.
 - Names: plugin `gemini`, marketplace `isaay6`, repo `gemini-bridge-cc`, commands `/gemini:*`, subagent `gemini:gemini-rescue`, env prefix `GEMINI_BRIDGE_`, fallback state dir `os.tmpdir()/gemini-bridge`.
-- `agy` is always spawned with `cwd = fs.realpathSync.native(workspaceRoot)`, `stdio: ["ignore","pipe","pipe"]`, `--output-format stream-json`, and an explicit `--print-timeout`.
+- `agy` is always spawned with `cwd = fs.realpathSync.native(workspaceRoot)`, `stdio: ["pipe","pipe","pipe"]`, `--input-format stream-json`, `--output-format stream-json`, an explicit `--print-timeout`, and exactly one prompt NDJSON line before stdin is closed.
 - Never pass `--dangerously-skip-permissions`. Never use `--mode plan`.
 - Read-only command allow-list: `git, ls, cat, grep, find, rg, head, tail, wc`.
 - Default timeouts: review 900 s, task 1800 s, stop gate 300 s. External kill timer = print-timeout + 30 s.

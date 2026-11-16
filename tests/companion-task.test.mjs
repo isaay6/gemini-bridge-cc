@@ -42,6 +42,10 @@ function recordedArgv(argsFile) {
   return JSON.parse(fs.readFileSync(argsFile, "utf8")).argv;
 }
 
+function recordedPrompt(argsFile) {
+  return JSON.parse(fs.readFileSync(argsFile, "utf8")).prompt;
+}
+
 function valueAfter(argv, flag) {
   const index = argv.indexOf(flag);
   return index === -1 ? undefined : argv[index + 1];
@@ -97,7 +101,7 @@ function killQuietly(pid) {
   }
 }
 
-// An agy stand-in that blocks real runs (-p) until a release file exists, then replays fake-agy.
+// An agy stand-in that blocks stream-json runs until a release file exists, then replays fake-agy.
 function makeGatedAgy(dir) {
   const releaseFile = path.join(dir, "release");
   const gated = path.join(dir, "gated-agy.mjs");
@@ -106,7 +110,7 @@ function makeGatedAgy(dir) {
     [
       'import fs from "node:fs";',
       `const release = ${JSON.stringify(releaseFile)};`,
-      'if (process.argv.includes("-p")) {',
+      'if (process.argv.includes("--input-format")) {',
       "  while (!fs.existsSync(release)) {",
       "    await new Promise((resolve) => setTimeout(resolve, 50));",
       "  }",
@@ -129,7 +133,7 @@ test("task --json runs agy in accept-edits mode by default and records a complet
 
   const argv = recordedArgv(argsFile);
   assert.equal(valueAfter(argv, "--mode"), "accept-edits");
-  assert.equal(valueAfter(argv, "-p"), "fix the add bug");
+  assert.equal(recordedPrompt(argsFile), "fix the add bug");
   assert.equal(valueAfter(argv, "--print-timeout"), "1800s");
   assert.ok(!argv.includes("--dangerously-skip-permissions"));
 
@@ -177,7 +181,7 @@ test("task --allow adds command rules to the permission settings", () => {
   assert.ok(settings.permissions.allow.includes("command(npm test)"));
   assert.ok(settings.permissions.allow.includes("command(python3)"));
   assert.ok(settings.permissions.allow.includes("command(git)"));
-  assert.equal(valueAfter(argv, "-p"), "run tests");
+  assert.equal(recordedPrompt(argsFile), "run tests");
 });
 
 test("task passes --model, --effort and --timeout through", () => {
@@ -288,7 +292,7 @@ test("task --resume-last continues the latest finished task conversation of this
   assert.equal(resumed.state, "completed");
   const argv = recordedArgv(argsFile);
   assert.equal(valueAfter(argv, "--conversation"), RESCUE_CONVERSATION);
-  assert.equal(valueAfter(argv, "-p"), "now add tests");
+  assert.equal(recordedPrompt(argsFile), "now add tests");
 });
 
 test("task --resume-last ignores review jobs and fails when no task exists", () => {

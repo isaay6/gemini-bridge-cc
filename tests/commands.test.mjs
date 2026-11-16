@@ -12,7 +12,7 @@ test("every command has a description and references companion subcommands in th
   const companion = fs.readFileSync(companionPath, "utf8");
   for (const name of commandNames) {
     const command = fs.readFileSync(path.join(PLUGIN_ROOT, "commands", `${name}.md`), "utf8");
-    assert.match(command, /^---\n[\s\S]*?^description:\s*.+$/m, `${name} needs a description`);
+    assert.match(command, /^---\r?\n[\s\S]*?^description:\s*.+\r?$/m, `${name} needs a description`);
     for (const match of command.matchAll(/gemini-companion\.mjs"\s+([a-z-]+)/g)) {
       assert.match(companion, new RegExp(`case "${match[1]}":`), `${name} references missing ${match[1]} dispatcher`);
     }
