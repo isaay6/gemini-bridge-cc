@@ -1,0 +1,21 @@
+{
+  "name": "isaay6",
+  "owner": {
+    "name": "isaay6"
+  },
+  "metadata": {
+    "description": "Gemini (via Antigravity CLI) plugins for Claude Code: delegation and code review.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "gemini",
+      "description": "Use Gemini (via Antigravity CLI) from Claude Code to review code or delegate tasks. Unofficial.",
+      "version": "0.1.0",
+      "author": {
+        "name": "isaay6"
+      },
+      "source": "./plugins/gemini"
+    }
+  ]
+}
