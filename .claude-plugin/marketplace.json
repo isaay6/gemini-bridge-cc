@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "Gemini (via Antigravity CLI) plugins for Claude Code: delegation and code review.",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "plugins": [
     {
       "name": "gemini",
       "description": "Use Gemini (via Antigravity CLI) from Claude Code to review code or delegate tasks. Unofficial.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "isaay6"
       },

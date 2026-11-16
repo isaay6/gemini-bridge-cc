@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.1
+
+### Fixed
+
+- Windows: prompts are sent to `agy` through stdin (`--input-format stream-json`) instead of the command line, so long prompts no longer hit the ~32K command-line limit.
+- Windows: line endings are forced to LF (`.gitattributes`) and parsers accept CRLF.
+- macOS / Node 18: hooks read their stdin robustly (retry on `EAGAIN`). Before, a long previous Claude response could silently disable the stop-time review gate.
+- The stop-time review gate passes its prompt to the companion through a private temporary file (mode 0600, deleted after the run).
+
+### Verified
+
+- Automated tests: 123/123 passing on ubuntu, macos and windows × Node 18.18 and 22 (GitHub Actions).
+- Real agy smoke (agy 1.5.9): passed (setup, review, task, task --resume-last).
+- Plugin installed into Claude Code from the marketplace; `/gemini:setup` verified inside Claude Code.
+
 ## 0.1.0
 
 Initial release (unofficial).
@@ -16,6 +31,6 @@ Initial release (unofficial).
 
 ### Verified
 
-- Automated tests: 104/104 passing
+- Automated tests: 104/104 passing (macOS)
 - Real agy smoke (agy 1.5.9): passed (setup, review, task, task --resume-last)
-- Plugin install into Claude Code and `/gemini:*` commands: pending (done by the controller)
+- Plugin install into Claude Code: verified locally
