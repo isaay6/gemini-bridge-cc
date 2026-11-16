@@ -81,6 +81,7 @@ Whether driving `agy` from third-party tooling is within Google's terms of use i
 - **A job times out.** Defaults are 900 s for reviews, 1800 s for tasks and 300 s for the stop gate. Use `--timeout <seconds>` on the companion, or narrow the review with `--base` / `--scope`.
 - **Empty result with denied actions.** `agy` stops the turn at the first denial. Re-run with `--allow "<command prefix>"` for what it needed.
 - **Not signed in or `agy` not found.** Run `/gemini:setup`. To point at a custom binary set `GEMINI_BRIDGE_AGY_BIN`.
+- **Windows finds only `agy.cmd` or `agy.bat`.** For security, wrappers are not supported; install the native `agy.exe` with `irm https://antigravity.google/cli/install.ps1 | iex`.
 - **Prompt too large.** Prompts over 100000 characters are rejected; narrow the scope.
 
 ## Development

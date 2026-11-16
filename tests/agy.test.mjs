@@ -8,7 +8,9 @@ import {
   READ_ONLY_COMMANDS,
   TESTED_AGY_VERSION,
   MIN_AGY_VERSION,
+  AGY_WRAPPER_UNSUPPORTED_DETAIL,
   resolveAgyBinary,
+  resolveAgyBinaryInfo,
   buildPermissionSettings,
   buildAgyArgs,
   buildAgyCommand,
@@ -128,12 +130,9 @@ test("buildAgyArgs rejects unsupported modes and never emits --mode plan", () =>
   }
 });
 
-test("buildAgyCommand invokes Windows command wrappers through cmd.exe", () => {
-  assert.deepEqual(buildAgyCommand("C:\\Program Files\\agy.cmd", ["-p", "say \"hello\""], { platform: "win32", comSpec: "C:\\Windows\\cmd.exe" }), {
-    command: "C:\\Windows\\cmd.exe",
-    args: ["/d", "/s", "/c", '"C:\\Program Files\\agy.cmd" -p "say \\"hello\\""']
-  });
-  assert.deepEqual(buildAgyCommand("agy.exe", ["--version"], { platform: "win32" }), { command: "agy.exe", args: ["--version"] });
+test("buildAgyCommand uses direct execution and rejects batch wrappers", () => {
+  assert.deepEqual(buildAgyCommand("agy.exe", ["--version"]), { command: "agy.exe", args: ["--version"] });
+  assert.throws(() => buildAgyCommand("C:\\Program Files\\agy.cmd", ["--version"]), new RegExp(AGY_WRAPPER_UNSUPPORTED_DETAIL));
 });
 
 test("buildPermissionSettings includes read-only commands and extras", () => {
@@ -158,6 +157,42 @@ test("resolveAgyBinary scans PATH without a shell", () => {
   fs.chmodSync(bin, 0o755);
   const found = resolveAgyBinary({ PATH: dir, PATHEXT: ".EXE", HOME: makeTempDir(), USERPROFILE: makeTempDir() });
   assert.equal(found, bin);
+});
+
+test("resolveAgyBinary rejects a Windows PATH containing only an agy.cmd wrapper", () => {
+  const dir = makeTempDir();
+  fs.writeFileSync(path.join(dir, "agy.cmd"), "@echo off\n");
+  const env = { PATH: dir, LOCALAPPDATA: makeTempDir() };
+  assert.equal(resolveAgyBinary(env, "win32"), null);
+  assert.equal(resolveAgyBinaryInfo(env, "win32").detail, AGY_WRAPPER_UNSUPPORTED_DETAIL);
+});
+
+test("resolveAgyBinary finds agy.exe on a Windows PATH", () => {
+  const dir = makeTempDir();
+  const bin = path.join(dir, "agy.exe");
+  fs.writeFileSync(bin, "native executable placeholder\n");
+  assert.equal(resolveAgyBinary({ PATH: dir, LOCALAPPDATA: makeTempDir() }, "win32"), bin);
+});
+
+test("resolveAgyBinary rejects GEMINI_BRIDGE_AGY_BIN batch wrappers on Windows", () => {
+  const env = { GEMINI_BRIDGE_AGY_BIN: "foo.cmd", PATH: "" };
+  assert.equal(resolveAgyBinary(env, "win32"), null);
+  assert.equal(resolveAgyBinaryInfo(env, "win32").detail, AGY_WRAPPER_UNSUPPORTED_DETAIL);
+});
+
+test("Windows keeps JavaScript test shims on the direct Node execution path", () => {
+  assert.equal(resolveAgyBinary({ GEMINI_BRIDGE_AGY_BIN: "fake-agy.mjs", PATH: "" }, "win32"), "fake-agy.mjs");
+  assert.deepEqual(buildAgyCommand("fake-agy.mjs", ["--version"]), {
+    command: process.execPath,
+    args: ["fake-agy.mjs", "--version"]
+  });
+});
+
+test("agy runtime never enables a shell or references the Windows command interpreter", () => {
+  const source = fs.readFileSync(new URL("../plugins/gemini/scripts/lib/agy.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /shell\s*:\s*true/);
+  assert.ok(!source.includes("cmd" + ".exe"));
+  assert.ok(!source.includes("Com" + "Spec"));
 });
 
 test("resolveAgyBinary returns null when nothing is found", () => {

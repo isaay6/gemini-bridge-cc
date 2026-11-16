@@ -14,16 +14,17 @@ export const MIN_AGY_VERSION = "1.5.0";
 // `--mode plan` is deliberately excluded: it writes a plan and waits for approval (phase 0).
 const ALLOWED_MODES = ["accept-edits", "auto"];
 
-const IS_WINDOWS = process.platform === "win32";
 const SYNC_TIMEOUT_MS = 60_000;
 const KILL_GRACE_MS = 5_000;
+export const AGY_WRAPPER_UNSUPPORTED_DETAIL =
+  "agy was found as a .cmd/.bat wrapper, which is not supported for security reasons; install the native agy.exe with: irm https://antigravity.google/cli/install.ps1 | iex";
 
-function isExecutableFile(file) {
+function isExecutableFile(file, platform = process.platform) {
   try {
     if (!fs.statSync(file).isFile()) {
       return false;
     }
-    if (!IS_WINDOWS) {
+    if (platform !== "win32") {
       fs.accessSync(file, fs.constants.X_OK);
     }
     return true;
@@ -32,21 +33,19 @@ function isExecutableFile(file) {
   }
 }
 
-function findOnPath(name, env) {
+function findOnPath(name, env, platform = process.platform) {
   const rawPath = env.PATH ?? env.Path ?? "";
   if (!rawPath) {
     return null;
   }
-  const exts = IS_WINDOWS
-    ? ["", ...String(env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean)]
-    : [""];
-  for (const dir of rawPath.split(path.delimiter)) {
+  const names = platform === "win32" ? [`${name}.exe`] : [name];
+  for (const dir of rawPath.split(platform === "win32" ? ";" : path.delimiter)) {
     if (!dir) {
       continue;
     }
-    for (const ext of exts) {
-      const candidate = path.join(dir, name + ext);
-      if (isExecutableFile(candidate)) {
+    for (const candidateName of names) {
+      const candidate = path.join(dir, candidateName);
+      if (isExecutableFile(candidate, platform)) {
         return candidate;
       }
     }
@@ -54,26 +53,51 @@ function findOnPath(name, env) {
   return null;
 }
 
-export function resolveAgyBinary(env = process.env) {
+function isBatchWrapper(file) {
+  return /\.(cmd|bat)$/i.test(file);
+}
+
+function isWindowsExecutableOrNodeShim(file) {
+  return /\.(exe|mjs|js)$/i.test(file);
+}
+
+export function resolveAgyBinaryInfo(env = process.env, platform = process.platform) {
   if (env.GEMINI_BRIDGE_AGY_BIN) {
-    return env.GEMINI_BRIDGE_AGY_BIN;
+    if (platform === "win32" && isBatchWrapper(env.GEMINI_BRIDGE_AGY_BIN)) {
+      return { bin: null, detail: AGY_WRAPPER_UNSUPPORTED_DETAIL };
+    }
+    if (platform === "win32" && !isWindowsExecutableOrNodeShim(env.GEMINI_BRIDGE_AGY_BIN)) {
+      return { bin: null, detail: null };
+    }
+    return { bin: env.GEMINI_BRIDGE_AGY_BIN, detail: null };
   }
-  const onPath = findOnPath("agy", env);
+  const onPath = findOnPath("agy", env, platform);
   if (onPath) {
-    return onPath;
+    return { bin: onPath, detail: null };
+  }
+  if (platform === "win32") {
+    const rawPath = env.PATH ?? env.Path ?? "";
+    const hasWrapper = rawPath.split(";").some((dir) =>
+      dir && ["agy.cmd", "agy.bat"].some((name) => isExecutableFile(path.join(dir, name), platform))
+    );
+    if (env.LOCALAPPDATA) {
+      const winBin = path.join(env.LOCALAPPDATA, "agy", "bin", "agy.exe");
+      if (isExecutableFile(winBin, platform)) {
+        return { bin: winBin, detail: null };
+      }
+    }
+    return { bin: null, detail: hasWrapper ? AGY_WRAPPER_UNSUPPORTED_DETAIL : null };
   }
   const home = env.HOME || env.USERPROFILE || os.homedir();
-  const localBin = path.join(home, ".local", "bin", IS_WINDOWS ? "agy.exe" : "agy");
-  if (isExecutableFile(localBin)) {
-    return localBin;
+  const localBin = path.join(home, ".local", "bin", "agy");
+  if (isExecutableFile(localBin, platform)) {
+    return { bin: localBin, detail: null };
   }
-  if (env.LOCALAPPDATA) {
-    const winBin = path.join(env.LOCALAPPDATA, "agy", "bin", "agy.exe");
-    if (isExecutableFile(winBin)) {
-      return winBin;
-    }
-  }
-  return null;
+  return { bin: null, detail: null };
+}
+
+export function resolveAgyBinary(env = process.env, platform = process.platform) {
+  return resolveAgyBinaryInfo(env, platform).bin;
 }
 
 export function buildPermissionSettings({ extraAllow = [] } = {}) {
@@ -111,21 +135,12 @@ export function buildAgyArgs({
   return args;
 }
 
-function quoteForCmd(value) {
-  const text = String(value);
-  if (!/[\s"]/u.test(text)) return text;
-  return `"${text.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1')}"`;
-}
-
-// Kept pure so Windows wrapper invocation can be verified off Windows.
-export function buildAgyCommand(bin, args, options = {}) {
-  const platform = options.platform ?? process.platform;
+export function buildAgyCommand(bin, args) {
+  if (isBatchWrapper(bin)) {
+    throw new Error(AGY_WRAPPER_UNSUPPORTED_DETAIL);
+  }
   if (/\.(mjs|js)$/i.test(bin)) {
     return { command: process.execPath, args: [bin, ...args] };
-  }
-  if (platform === "win32" && /\.(cmd|bat)$/i.test(bin)) {
-    const commandLine = [bin, ...args].map(quoteForCmd).join(" ");
-    return { command: options.comSpec ?? process.env.ComSpec ?? "cmd.exe", args: ["/d", "/s", "/c", commandLine] };
   }
   return { command: bin, args };
 }
@@ -136,7 +151,8 @@ function runSync(bin, args) {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: SYNC_TIMEOUT_MS,
-    windowsHide: true
+    windowsHide: true,
+    shell: false
   });
 }
 
@@ -227,8 +243,9 @@ export function runAgy({ bin, args, cwd, timeoutMs, onEvent, onStderrLine, onSpa
       cwd: realCwd,
       env: env ?? process.env,
       stdio: ["ignore", "pipe", "pipe"],
-      detached: !IS_WINDOWS,
-      windowsHide: true
+      detached: process.platform !== "win32",
+      windowsHide: true,
+      shell: false
     });
     const pid = child.pid ?? null;
 

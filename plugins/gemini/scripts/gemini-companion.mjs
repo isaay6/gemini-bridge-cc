@@ -15,7 +15,7 @@ import {
   getAgyVersion,
   listAgyModels,
   MIN_AGY_VERSION,
-  resolveAgyBinary,
+  resolveAgyBinaryInfo,
   runAgy,
   TESTED_AGY_VERSION
 } from "./lib/agy.mjs";
@@ -178,7 +178,8 @@ function installCommandFor(platform = process.platform) {
 // agy availability
 
 function inspectAgy(env = process.env) {
-  const bin = resolveAgyBinary(env);
+  const resolution = resolveAgyBinaryInfo(env);
+  const bin = resolution.bin;
   const base = {
     available: false,
     supported: false,
@@ -191,7 +192,7 @@ function inspectAgy(env = process.env) {
     installCommand: null
   };
   if (!bin) {
-    return { ...base, detail: "not found", installCommand: installCommandFor() };
+    return { ...base, detail: resolution.detail ?? "not found", installCommand: installCommandFor() };
   }
   const version = getAgyVersion(bin);
   if (!version.ok) {
@@ -841,7 +842,8 @@ function spawnDetachedTaskWorker(cwd, jobId) {
     env: process.env,
     detached: true,
     stdio: "ignore",
-    windowsHide: true
+    windowsHide: true,
+    shell: false
   });
   child.unref();
   return child;
