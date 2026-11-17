@@ -25,10 +25,10 @@ Then, inside Claude Code, run:
 
 `/gemini:setup` checks that `agy` is installed, supported and authenticated, and lists the models your account can use.
 
-While this repository is private, `claude plugin marketplace add isaay6/gemini-bridge-cc` needs GitHub access to the repo (for example a signed-in `gh` or a configured git credential). To install from a local clone instead:
+To install from a local clone instead:
 
 ```bash
-git clone <repo url> /path/to/clone
+git clone https://github.com/isaay6/gemini-bridge-cc.git /path/to/clone
 claude plugin marketplace add /path/to/clone
 claude plugin install gemini@isaay6
 ```
@@ -60,7 +60,7 @@ Reviews use `--base <ref>` to compare `<ref>...HEAD`, and `--scope` to pick the 
 - **`--allow <prefix>`** (repeatable) adds a command prefix, for example `--allow "npm test"`. Anything not on the list is denied and reported.
 - **`--auto`** (companion `task` flag) opts into `agy`'s `auto` mode. It is not available for every account; if it is not, `agy` falls back to its default mode and the plugin tells you.
 - **The plugin never uses `--dangerously-skip-permissions`**, and never uses `--mode plan`.
-- A denial ends the Gemini turn. If actions were denied the result is reported as completed with denials, and as failed for permissions if there was no response, listing what was denied.
+- A denial ends the Gemini turn. A run with denied actions is never reported as a success: with a partial answer it is `completed-with-denials` (`ok: false`, exit code 2), and with no answer it fails for permissions. Either way the denied actions are listed.
 
 Settings are passed per run with `--settings`; your own `agy` configuration is not modified.
 
@@ -72,7 +72,7 @@ Job state is stored locally under `CLAUDE_PLUGIN_DATA`, or `$TMPDIR/gemini-bridg
 
 ## Google terms
 
-Whether driving `agy` from third-party tooling is within Google's terms of use is not clearly answered by Google. You are responsible for checking the terms that apply to your account and `agy` plan. This repository is private until the maintainer decides otherwise.
+Whether driving `agy` from third-party tooling is within Google's terms of use is not clearly answered by Google. You are responsible for checking the terms that apply to your account and `agy` plan.
 
 ## Troubleshooting
 
